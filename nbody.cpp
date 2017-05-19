@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <omp.h>
+#include <vector>
 using namespace std;
 
 #include "vector2.h"
