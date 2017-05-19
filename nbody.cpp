@@ -11,8 +11,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <vector>
 #include <omp.h>
+using namespace std;
 
 #include "vector2.h"
 
@@ -27,6 +27,7 @@ const int fieldHalfHeight = fieldHeight >> 1;
 
 const float minBodyMass = 2.5f;
 const float maxBodyMassVariance = 5.f;
+#define	NUM_THREADS	32
 
 /*
  * Particle structure
@@ -55,34 +56,41 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
 
 	float distance;
 
-	for (size_t j = 0; j < p_bodies.size(); ++j)
-	{
-		Particle &p1 = p_bodies[j];
-	
-		force = 0.f, acceleration = 0.f;
-	
-		for (size_t k = 0; k < p_bodies.size(); ++k)
-		{
-			if (k == j) continue;
-		
-			Particle &p2 = p_bodies[k];
-			
-			// Compute direction vector
-			direction = p2.Position - p1.Position;
-			
-			// Limit distance term to avoid singularities
-			distance = std::max<float>( 0.5f * (p2.Mass + p1.Mass), direction.Length() );
-			
-			// Accumulate force
-			force += direction / (distance * distance * distance) * p2.Mass; 
-		}
-				
-		// Compute acceleration for body 
-		acceleration = force * p_gravitationalTerm;
-		
-		// Integrate velocity (m/s)
-		p1.Velocity += acceleration * p_deltaT;
-	}
+    omp_set_num_threads(NUM_THREADS);
+
+    //#pragma omp parallel
+    {
+        int numOfThreads = omp_get_num_threads();
+
+
+        //#pragma omp parallel for private(direction, force, acceleration, distance)
+        for (size_t j = 0; j < p_bodies.size(); ++j) {
+            Particle &p1 = p_bodies[j];
+
+            force = 0.f, acceleration = 0.f;
+
+            for (size_t k = 0; k < p_bodies.size(); ++k) {
+                if (k == j) continue;
+
+                Particle &p2 = p_bodies[k];
+
+                // Compute direction vector
+                direction = p2.Position - p1.Position;
+
+                // Limit distance term to avoid singularities
+                distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), direction.Length());
+
+                // Accumulate force
+                force += direction / (distance * distance * distance) * p2.Mass;
+            }
+
+            // Compute acceleration for body
+            acceleration = force * p_gravitationalTerm;
+
+            // Integrate velocity (m/s)
+            p1.Velocity += acceleration * p_deltaT;
+        }
+    }
 }
 
 /*
@@ -90,7 +98,9 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
  */
 void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
 {
-	for (size_t j = 0; j < p_bodies.size(); ++j)
+    size_t j;
+    //#pragma omp parallel for shared(p_bodies,p_deltaT) private(j)
+	for (j = 0; j < p_bodies.size(); ++j)
 	{
 		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
 	}
@@ -124,25 +134,42 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 int main(int argc, char **argv)
 {
 	const int particleCount = 1024;
-	const int maxIteration = 1000;
+	const int maxIteration = 100; //TODO - to test with 1000
 	const float deltaT = 0.01f;
 	const float gTerm = 20.f;
 
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
 
+    int start_s = clock();
+    int totalTime = 0;
+
+
 	for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
 		bodies.push_back(Particle());
-			
-	for (int iteration = 0; iteration < maxIteration; ++iteration)
-	{
-		ComputeForces(bodies, gTerm, deltaT);
-		MoveBodies(bodies, deltaT);
-		
-		fileOutput.str(std::string());
-		fileOutput << "nbody_" << iteration << ".txt";
-		PersistPositions(fileOutput.str(), bodies);
-	}
+
+    //#pragma omp parallel
+    {
+        //cannot set parallelization in this loop since each loop depends
+        // definetly from the bodies state of the immediate loop before.
+        for (int iteration = 0; iteration < maxIteration; ++iteration)
+        {
+            int start_s=clock();
+            ComputeForces(bodies, gTerm, deltaT);
+            int stop_s = clock();
+            totalTime += stop_s-start_s;
+            //TODO - should consider to put a barrier here.
+            MoveBodies(bodies, deltaT);
+
+            fileOutput.str(std::string());
+            fileOutput << "out/nbody_" << iteration << ".txt";
+            cout << "\ntime : " << (stop_s-start_s)/double(CLOCKS_PER_SEC)*1000 <<  " ms"  << endl;
+            //PersistPositions(fileOutput.str(), bodies);
+        }
+
+        //outputTotal time taken for computation of all loops
+        cout << "\ntotal time v : " << (totalTime)/double(CLOCKS_PER_SEC)*1000 <<  " ms"  << endl;
+    }
 
 	return 0;
 }
