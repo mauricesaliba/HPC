@@ -57,25 +57,29 @@ struct Particle
  */
 void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, float p_deltaT)
 {
-	Vector2 direction,
-		force, acceleration;
+    Vector2 direction,
+            force, acceleration;
 
 	float distance;
 
     omp_set_num_threads(NUM_THREADS);
-
-
-
     int numOfThreads = omp_get_num_threads();
 
+    size_t j = 0;
+    size_t k = 0;
 
-    //#pragma omp parallel for collapse(2)
-    for (size_t j = 0; j < p_bodies.size(); ++j) {
+    #pragma omp declare reduction(plusVector2 : Vector2 : omp_out = omp_out + omp_in) \
+             initializer (omp_priv= 0.f)
+
+    force = 0.f, acceleration = 0.f;
+
+    #pragma omp parallel for schedule(static) private(j,acceleration) shared(p_gravitationalTerm) num_threads(NUM_THREADS)
+    for (j = 0; j < p_bodies.size(); ++j)
+    {
         Particle &p1 = p_bodies[j];
 
-        force = 0.f, acceleration = 0.f;
-
-        for (size_t k = 0; k < p_bodies.size(); ++k) {
+        #pragma omp parallel for schedule(static) private(k,direction,distance) reduction(plusVector2: force)
+        for (k = 0; k < p_bodies.size(); ++k) {
             if (k == j) continue;
 
             Particle &p2 = p_bodies[k];
@@ -90,11 +94,14 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
             force += direction / (distance * distance * distance) * p2.Mass;
         }
 
-        // Compute acceleration for body
+
         acceleration = force * p_gravitationalTerm;
 
         // Integrate velocity (m/s)
         p1.Velocity += acceleration * p_deltaT;
+        //reset acceleration and force values
+        force = 0.f, acceleration = 0.f;
+
     }
 
 }
@@ -120,7 +127,7 @@ void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
  */
 void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p_bodies)
 {
-	std::cout << "Writing to file: " << p_strFilename << std::endl;
+	std::cout << "\nWriting to file: " << p_strFilename << std::endl;
 	std::ofstream output(p_strFilename.c_str());
 	
 	if (output.is_open())
@@ -141,7 +148,7 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 
 int main(int argc, char **argv)
 {
-	const int particleCount = 1024 ; // TODO - to test with 1024
+	const int particleCount = 1024; // TODO - to test with 1024
 	const int maxIteration = 1000; //TODO - to test with 1000
 	const float deltaT = 0.01f;
 	const float gTerm = 20.f;
@@ -177,7 +184,7 @@ int main(int argc, char **argv)
         fileOutput.str(std::string());
         fileOutput << "out/nbody_" << iteration << ".txt";
 
-        //PersistPositions(fileOutput.str(), bodies);
+        PersistPositions(fileOutput.str(), bodies);
     }
 
     //outputTotal time taken for computation of all loops
