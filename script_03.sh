@@ -16,8 +16,7 @@
 . /etc/profile.d/modules.sh
 
 # Add any modules you might require:
-module add shared openmpi/gcc/64/1.8.8
-module add shared mpich2/hydra/gcc/3.2
+module add gcc/4.9.4
 
 # The following output will show in the output file
 echo "Got $NSLOTS processors."

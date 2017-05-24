@@ -7,7 +7,7 @@
 #$ -cwd
 #
 # pe (Parallel environment) request. Set your number of processors here.
-#$ -pe openmpi 4
+#$ -pe openmpi 12
 #
 # Run job through bash shell
 #$ -S /bin/bash
@@ -22,4 +22,4 @@ module add shared openmpi/gcc/64/1.8.8
 echo "Got $NSLOTS processors."
 
 # Run your application
-mpirun -np $NSLOTS ./mpiExec input_16384.txt > output_fileFour.txt
+mpirun -np $NSLOTS ./mpi_nbody.o > output_mpi.txt

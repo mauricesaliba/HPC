@@ -6,12 +6,15 @@
 //	Sample naive [O(n^2)] implementation for the N-Body problem.
 //----------------------------------------------------------------------------------------------
 
+#include <mpi.h>
 #include <stdlib.h>
 #include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <omp.h>
+
+
 #include <vector>
 #include <time.h>
 using namespace std;
@@ -33,9 +36,20 @@ const int fieldHalfHeight = fieldHeight >> 1;
 
 const float minBodyMass = 2.5f;
 const float maxBodyMassVariance = 5.f;
+
+const int particleCount = 1024; // TODO - to test with 1024
+const int maxIteration = 1000; //TODO - to test with 1000
+const float deltaT = 0.01f;
+const float gTerm = 20.f;
+
 #define	NUM_THREADS	12
-//switch to control parallelization - if set to 1 openmp directives will be included
-#define	DO_PARALLELIZE	0
+
+
+int my_rank;
+int size;
+int* myStart;
+int* myEnd;
+int numberOfProcessors;
 
 /*
  * Particle structure
@@ -53,6 +67,7 @@ struct Particle
 		, Mass ( ((float)rand()) / RAND_MAX * maxBodyMassVariance + minBodyMass )
 	{ }
 };
+typedef Particle* _Particle;
 
 /*
  * Compute forces of particles exerted on one another
@@ -70,23 +85,14 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
     size_t j = 0;
     size_t k = 0;
 
-    #if DO_PARALLELIZE == 1
-        #pragma omp declare reduction(plusVector2 : Vector2 : omp_out = omp_out + omp_in) \
-                 initializer (omp_priv= 0.f)
-    #endif
-
     force = 0.f, acceleration = 0.f;
 
-    #if DO_PARALLELIZE == 1
-        #pragma omp parallel for schedule(static) private(j,acceleration) shared(p_gravitationalTerm) num_threads(NUM_THREADS)
-    #endif
+
     for (j = 0; j < p_bodies.size(); ++j)
     {
         Particle &p1 = p_bodies[j];
 
-        #if DO_PARALLELIZE == 1
-            #pragma omp parallel for schedule(static) private(k,direction,distance) reduction(plusVector2: force) num_threads(NUM_THREADS)
-        #endif
+
         for (k = 0; k < p_bodies.size(); ++k) {
             if (k == j) continue;
 
@@ -122,10 +128,6 @@ void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
     omp_set_num_threads(NUM_THREADS);
     size_t j;
     int p_bodies_size = p_bodies.size();
-    //static scheduling was done because of know number
-    #if DO_PARALLELIZE == 1
-        #pragma omp parallel for shared(p_bodies,p_deltaT,p_bodies_size) private(j) schedule(static) num_threads(NUM_THREADS)
-    #endif
 	for (j = 0; j < p_bodies_size; ++j)
 	{
 		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
@@ -158,10 +160,19 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 
 int main(int argc, char **argv)
 {
-	const int particleCount = 1024; // TODO - to test with 1024
-	const int maxIteration = 1000; //TODO - to test with 1000
-	const float deltaT = 0.01f;
-	const float gTerm = 20.f;
+
+    int i, z;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    char hn[256];
+    gethostname(hn, 256);
+
+
+    printf("Hello MPI Maurice! Process %d of %d host %s\n",
+           my_rank, size, hn);
 
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
@@ -169,16 +180,37 @@ int main(int argc, char **argv)
     //TODO - clean
     int milliSecondsDelay =5000;
 
-
+    //intialize bodies
 	for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
 		bodies.push_back(Particle());
+
+
+
+    myStart = (int *) malloc(size * sizeof(int));
+    myEnd = (int *) malloc(size * sizeof(int));
+
+    myStart[0] = 0;
+    myEnd[0] = particleCount / size;
+    for (i = 1; i < size; i++) {
+        myStart[i] = myEnd[i - 1];
+        myEnd[i] = myStart[i] + particleCount / size;
+    }
+    myEnd[size - 1] = particleCount;
+
+    if (my_rank == 0) {
+        for (i = 0; i < size; i++) {
+            fprintf(stderr, "Process %i owns particle %i through %i\n", i, myStart[i], myEnd[i]);
+        }
+    }
+
+
 
 
     double start_time, stop_time, time, totalTimeComputeForces, totalTimeMoveBodies  = 0.0f;
 
     //cannot set parallelization in this loop since each loop depends
     // definetly from the bodies state of the immediate loop before.
-    for (int iteration = 0; iteration < maxIteration; ++iteration)
+    /*for (int iteration = 1000; iteration < maxIteration; ++iteration) //TODO- set iteration to 1000 again to start this loop again
     {
         start_time = omp_get_wtime();
         ComputeForces(bodies, gTerm, deltaT);
@@ -200,12 +232,12 @@ int main(int argc, char **argv)
         fileOutput.str(std::string());
         fileOutput << "out/nbody_" << iteration << ".txt";
         PersistPositions(fileOutput.str(), bodies);
-    }
+    }*/
 
     //outputTotal time taken for computation of all loops
     cout << "\ntotal time computing forces: \t\t" << totalTimeComputeForces <<  " seconds";
     cout << "\ntotal time move bodies: \t\t" << totalTimeMoveBodies <<  " seconds";
 
-
+    MPI_Finalize();
 	return 0;
 }
