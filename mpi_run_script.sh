@@ -7,7 +7,7 @@
 #$ -cwd
 #
 # pe (Parallel environment) request. Set your number of processors here.
-#$ -pe openmpi 12
+#$ -pe openmpi 4
 #
 # Run job through bash shell
 #$ -S /bin/bash
