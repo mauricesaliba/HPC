@@ -54,6 +54,39 @@ struct Particle
 	{ }
 };
 
+
+
+/*
+ * read inital values for particles from input file
+ */
+void readInitialBodyValuesFromFile(std::vector<Particle> &p_bodies, const char* filename)
+{
+    std::ifstream  data(filename);
+
+    std::string line;
+    while(std::getline(data,line))
+    {
+        std::stringstream  lineStream(line);
+        std::string        cell;
+        std::string         temp;
+
+        Particle particle;
+
+        std::getline(lineStream,cell,',');
+        particle.Mass = ::atof(cell.c_str());
+        std::getline(lineStream,cell,',');
+        particle.Position.X = ::atof(cell.c_str());
+        std::getline(lineStream,cell,',');
+
+        particle.Position.Y = ::atof(cell.c_str());
+        particle.Velocity.X = 0.0f;
+        particle.Velocity.Y = 0.0f;
+        p_bodies.push_back(particle);
+
+        //cout << "mass: " << particle.Mass <<  "    X: " << particle.Position.X <<  "    Y: " << particle.Position.Y <<  "\n";
+    }
+}
+
 /*
  * Compute forces of particles exerted on one another
  */
@@ -137,7 +170,7 @@ void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
  */
 void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p_bodies)
 {
-	std::cout << "\nWriting to file: " << p_strFilename << std::endl;
+	std::cout << "\nWriting to file: " << p_strFilename << "\n";
 	std::ofstream output(p_strFilename.c_str());
 	
 	if (output.is_open())
@@ -146,35 +179,33 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 		{
 			output << 	p_bodies[j].Mass << ", " <<
 				p_bodies[j].Position.Element[0] << ", " <<
-				p_bodies[j].Position.Element[1] << std::endl;
+				p_bodies[j].Position.Element[1] << "\n";
 		}
 		
 		output.close();
 	}
 	else
-		std::cerr << "Unable to persist data to file:" << p_strFilename << std::endl;
+		std::cerr << "Unable to persist data to file:" << p_strFilename << "\n";
 
 }
 
 int main(int argc, char **argv)
 {
-	const int particleCount = 1024; // TODO - to test with 1024
-	const int maxIteration = 1000; //TODO - to test with 1000
+	int particleCount = 0;
+	const int maxIteration = 1000;
 	const float deltaT = 0.01f;
 	const float gTerm = 20.f;
 
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
 
-    //TODO - clean
-    int milliSecondsDelay =5000;
+	//for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
+	//	bodies.push_back(Particle());
+    readInitialBodyValuesFromFile(bodies, argv[1]);
+    particleCount = bodies.size();
 
 
-	for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
-		bodies.push_back(Particle());
-
-
-    double start_time, stop_time, time, totalTimeComputeForces, totalTimeMoveBodies  = 0.0f;
+    double start_time, stop_time, time, totalTimeComputeForces, totalTimeMoveBodies, totalGlobalTime = 0.0f;
 
     //cannot set parallelization in this loop since each loop depends
     // definetly from the bodies state of the immediate loop before.
@@ -205,6 +236,11 @@ int main(int argc, char **argv)
     //outputTotal time taken for computation of all loops
     cout << "\ntotal time computing forces: \t\t" << totalTimeComputeForces <<  " seconds";
     cout << "\ntotal time move bodies: \t\t" << totalTimeMoveBodies <<  " seconds";
+
+    totalGlobalTime = totalTimeComputeForces + totalTimeMoveBodies;
+
+    printf("Total exec time: %f seconds \t\t Average exec time %f seconds\n",  totalGlobalTime, totalGlobalTime/maxIteration);
+
 
 
 	return 0;

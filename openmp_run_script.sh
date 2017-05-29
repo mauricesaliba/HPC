@@ -5,7 +5,7 @@
 #
 # Use current working directory
 #$ -cwd
-#$ -pe smp 8-32
+#$ -pe smp 8-12
 #
 #
 # Run job through bash shell
@@ -24,6 +24,6 @@ echo "Got $NSLOTS processors."
 echo "Hello from `hostname`" 
 
 # Run your application 
-export OMP_NUM_THREADS=32 
+export OMP_NUM_THREADS=12 
 
 ./exec_01.o > output_executable.log

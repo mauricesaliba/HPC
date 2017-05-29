@@ -49,6 +49,8 @@ int size;
 int* partition_start;
 int* partition_end;
 
+#define	NUM_THREADS	12
+
 /*
  * Particle structure
  */
@@ -88,7 +90,7 @@ MPI_Status status;
 
 
 /*
- * Compute forces of particles exerted on one another
+ * read inital values for particles from input file
  */
 void readInitialBodyValuesFromFile(std::vector<Particle> &p_bodies, const char* filename)
 {
@@ -126,20 +128,32 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
     Vector2 direction,
             force, acceleration;
 
-	float distance;
+    float distance;
+
+    omp_set_num_threads(NUM_THREADS);
+    int numOfThreads = omp_get_num_threads();
 
     size_t j = 0;
     size_t k = 0;
 
+    #if DO_PARALLELIZE == 1
+        #pragma omp declare reduction(plusVector2 : Vector2 : omp_out = omp_out + omp_in) \
+                     initializer (omp_priv= 0.f)
+    #endif
+
     force = 0.f, acceleration = 0.f;
 
-
+    #if DO_PARALLELIZE == 1
+        #pragma omp parallel for schedule(static) private(j,acceleration) shared(p_gravitationalTerm) num_threads(NUM_THREADS)
+    #endif
     for (j = partition_start[my_rank]; j < partition_end[my_rank]; j++)
     {
         Particle &p1 = p_bodies[j];
 
-        for (k = 0; k < p_bodies.size(); ++k)
-        {
+        #if DO_PARALLELIZE == 1
+            #pragma omp parallel for schedule(static) private(k,direction,distance) reduction(plusVector2: force) num_threads(NUM_THREADS)
+        #endif
+        for (k = 0; k < p_bodies.size(); ++k) {
             if (k == j) continue;
 
             Particle &p2 = p_bodies[k];
@@ -161,6 +175,7 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
         p1.Velocity += acceleration * p_deltaT;
         //reset acceleration and force values
         force = 0.f, acceleration = 0.f;
+
     }
 }
 
@@ -169,12 +184,17 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
  */
 void MoveBodies(std::vector<Particle> &p_bodies,  float p_deltaT)
 {
+    omp_set_num_threads(NUM_THREADS);
     size_t j;
     int p_bodies_size = p_bodies.size();
+    //static scheduling was done because of know number
+    #if DO_PARALLELIZE == 1
+        #pragma omp parallel for shared(p_bodies,p_deltaT,p_bodies_size) private(j) schedule(static) num_threads(NUM_THREADS)
+    #endif
     for (j = partition_start[my_rank]; j < partition_end[my_rank]; j++)
-	{
-		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
-	}
+    {
+        p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
+    }
 }
 
 /*
